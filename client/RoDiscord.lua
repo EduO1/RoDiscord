@@ -16,7 +16,7 @@
 
 local CONFIG = {
     API_URL = "https://rodiscord.onrender.com",
-    VERSION = "1.0",
+    VERSION = "5.0",
     COLORS = {
         PRIMARY = Color3.fromRGB(88, 101, 242),
         BG1 = Color3.fromRGB(36, 37, 41),
@@ -365,6 +365,7 @@ local function showMainInterface()
     mainWindow.BackgroundColor3 = CONFIG.COLORS.BG2
     mainWindow.BorderSizePixel = 0
     mainWindow.Parent = screenGui
+    mainWindow.ClipsDescendants = true
     
     local windowCorner = Instance.new("UICorner")
     windowCorner.CornerRadius = UDim.new(0, 12)
