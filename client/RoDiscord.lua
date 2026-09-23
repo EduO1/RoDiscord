@@ -119,7 +119,6 @@ local function showAuthScreen()
     local gui = Instance.new("ScreenGui")
     gui.Name = "RoDiscordAuth"
     gui.ResetOnSpawn = false
-    gui.ZIndex = 10000
     
     local guiParent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
     gui.Parent = guiParent
@@ -257,7 +256,6 @@ local function showPinInputModal(instructionText)
     local modal = Instance.new("ScreenGui")
     modal.Name = "PinModal"
     modal.ResetOnSpawn = false
-    modal.ZIndex = 10001
     
     local guiParent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
     modal.Parent = guiParent
@@ -684,7 +682,6 @@ local function showAddEmojiModal()
     local modal = Instance.new("ScreenGui")
     modal.Name = "AddEmojiModal"
     modal.ResetOnSpawn = false
-    modal.ZIndex = 10002
     
     local guiParent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
     modal.Parent = guiParent
