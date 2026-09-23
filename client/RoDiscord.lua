@@ -7,7 +7,7 @@
 
 local CONFIG = {
     -- API Backend
-    API_URL = "192.168.1.105:3000",
+    API_URL = "https://rodiscord.onrender.com",
     
     -- Cores Discord Oficiais
     COLORS = {
