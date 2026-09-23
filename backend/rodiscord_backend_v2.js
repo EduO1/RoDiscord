@@ -209,15 +209,27 @@ app.get('/api/servers/:user_id', async (req, res) => {
     try {
         const { user_id } = req.params;
 
+        // Primeiro, pegar IDs dos servidores onde o user é membro
+        const { data: members, error: membersError } = await supabase
+            .from('server_members')
+            .select('server_id')
+            .eq('user_id', user_id);
+
+        if (membersError && membersError.code !== 'PGRST116') {
+            return res.status(500).json({ error: membersError.message });
+        }
+
+        const serverIds = (members || []).map(m => m.server_id);
+
+        if (serverIds.length === 0) {
+            return res.json({ success: true, servers: [] });
+        }
+
+        // Pegar dados dos servidores
         const { data, error } = await supabase
             .from('servers')
             .select('*')
-            .in('id', (
-                await supabase
-                    .from('server_members')
-                    .select('server_id')
-                    .eq('user_id', user_id)
-            ).data?.map(m => m.server_id) || []);
+            .in('id', serverIds);
 
         if (error) return res.status(500).json({ error: error.message });
 
