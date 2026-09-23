@@ -6,7 +6,7 @@
 -- DMs, Reações, Emojis, Tudo funcional
 -- ============================================
 
-local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Qanuir/orion-ui/refs/heads/main/source.lua"))()
 
 local CONFIG = {
     API_URL = "https://rodiscord.onrender.com",
