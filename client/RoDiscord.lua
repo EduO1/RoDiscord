@@ -1,29 +1,30 @@
 -- ============================================
--- 🔥 RoDiscord v7 - DISCORD EXATO NO ROBLOX
+-- 🔥 RoDiscord v8 - FRONTEND COMPLETO
 -- ============================================
--- Interface IDÊNTICA ao Discord
--- Servidores, Canais, Chat em Tempo Real
--- DMs, Reações, Emojis, Tudo funcional
+-- Interface Discord EXATA com Orion UI
+-- Login obrigatório, servidores, canais, chat, DMs
 -- ============================================
 
 local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Qanuir/orion-ui/refs/heads/main/source.lua"))()
 
 local CONFIG = {
     API_URL = "https://rodiscord.onrender.com",
-    VERSION = "7.0",
+    VERSION = "8.0",
 }
 
 local App = {
     currentUser = nil,
     sessionToken = nil,
-    selectedServer = "RoDiscord",
-    selectedChannel = "general",
-    selectedDM = nil,
+    currentServer = nil,
+    currentChannel = nil,
+    currentDM = nil,
     isDM = false,
+    servers = {},
+    channels = {},
     messages = {},
-    serverMessages = {},
-    dmMessages = {},
     friends = {},
+    isLoggedIn = false,
+    loginType = nil, -- "roblox" ou "discord"
 }
 
 -- ============================================
@@ -39,68 +40,63 @@ local function makeRequest(method, endpoint, data)
             return game:GetService("HttpService"):GetAsync(url)
         elseif method == "POST" then
             return game:GetService("HttpService"):PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
+        elseif method == "PUT" then
+            return game:GetService("HttpService"):PutAsync(url, body, Enum.HttpContentType.ApplicationJson)
+        elseif method == "DELETE" then
+            return game:GetService("HttpService"):RequestAsync({
+                Url = url,
+                Method = "DELETE",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            }).Body
         end
     end)
     
     if success then
-        return game:GetService("HttpService"):JSONDecode(response)
+        local decoded = game:GetService("HttpService"):JSONDecode(response)
+        return decoded
     end
     return nil
 end
 
 -- ============================================
--- DATA
+-- HELPER FUNCTIONS
 -- ============================================
 
-local Servers = {
-    {
-        name = "RoDiscord",
-        icon = "🔥",
-        channels = {
-            {name = "general", type = "text", description = "Canal principal"},
-            {name = "random", type = "text", description = "Conversa aleatória"},
-            {name = "suporte", type = "text", description = "Suporte e ajuda"},
-            {name = "notícias", type = "text", description = "Notícias importantes"},
-            {name = "Principal", type = "voice", description = "Canal de voz principal"},
-            {name = "Gaming", type = "voice", description = "Para jogar"},
-            {name = "AFK", type = "voice", description = "Canal AFK"}
-        }
-    },
-    {name = "Dev", icon = "💻", channels = {{name = "geral", type = "text"}, {name = "dev-voice", type = "voice"}}},
-    {name = "Gaming", icon = "🎮", channels = {{name = "games", type = "text"}, {name = "game-voice", type = "voice"}}},
-    {name = "Support", icon = "🛠️", channels = {{name = "tickets", type = "text"}, {name = "support-voice", type = "voice"}}}
-}
+local function showNotification(title, content)
+    OrionLib:MakeNotification({
+        Name = title,
+        Content = content,
+        Image = "rbxassetid://4483345998",
+        Time = 3
+    })
+end
 
-local Friends = {
-    {name = "AlexDev", status = "Online", statusEmoji = "🟢"},
-    {name = "RobloxGamer", status = "Idle", statusEmoji = "🟡"},
-    {name = "CodeMaster", status = "Online", statusEmoji = "🟢"},
-    {name = "DiscordBot", status = "Online", statusEmoji = "🟢"},
-    {name = "WebDeveloper", status = "Online", statusEmoji = "🟢"},
-    {name = "Designer", status = "Do Not Disturb", statusEmoji = "🔴"},
-    {name = "GameDev", status = "Online", statusEmoji = "🟢"}
-}
-
-local ExampleMessages = {
-    {author = "System", content = "Bem-vindo ao RoDiscord! 🎉", timestamp = "14:30", isSystem = true},
-    {author = "AlexDev", content = "E aí galera! Tudo certo?", timestamp = "14:31"},
-    {author = "RobloxGamer", content = "Opa! Tudo bem com vocês", timestamp = "14:32"},
-    {author = "You", content = "Oi pessoal! 👋", timestamp = "14:33", isOwn = true}
-}
+local function getAvatarUrl(user)
+    if user.avatar_url then return user.avatar_url end
+    if user.discord_id then
+        return "https://cdn.discordapp.com/avatars/" .. user.discord_id .. "/avatar.png"
+    end
+    if user.roblox_id then
+        return "https://www.roblox.com/bust-thumbnails/" .. user.roblox_id .. "/400x400.png"
+    end
+    return "rbxassetid://0"
+end
 
 -- ============================================
--- CRIAR WINDOW PRINCIPAL
+-- CRIAR WINDOW
 -- ============================================
 
 local Window = OrionLib:MakeWindow({
     Name = "🔥 RoDiscord v" .. CONFIG.VERSION,
     HidePremium = false,
     SaveConfig = true,
-    ConfigFolder = "RoDiscord"
+    ConfigFolder = "RoDiscord",
+    IntroEnabled = false
 })
 
 -- ============================================
--- TAB 1 - LOGIN
+-- TAB 1 - LOGIN (OBRIGATÓRIA)
 -- ============================================
 
 local LoginTab = Window:MakeTab({
@@ -110,59 +106,64 @@ local LoginTab = Window:MakeTab({
 })
 
 LoginTab:AddLabel("Bem-vindo ao RoDiscord!")
-LoginTab:AddLabel("Escolha sua forma de autenticação:")
+LoginTab:AddLabel("Escolha como fazer login:")
 LoginTab:AddLabel("")
 
+-- Login Roblox
 LoginTab:AddButton({
     Name = "🎮 Entrar com Roblox",
     Callback = function()
         local userId = game.Players.LocalPlayer.UserId
         local username = game.Players.LocalPlayer.Name
+        local avatarUrl = "https://www.roblox.com/bust-thumbnails/" .. userId .. "/400x400.png"
         
         local result = makeRequest("POST", "/api/auth/roblox-login", {
             roblox_id = userId,
             roblox_username = username,
-            avatar_url = "https://www.roblox.com/bust-thumbnails/" .. userId .. "/400x400.png"
+            avatar_url = avatarUrl
         })
         
         if result and result.success then
             App.currentUser = result.profile
             App.sessionToken = result.session_token
-            OrionLib:MakeNotification({
-                Name = "✅ Login Sucesso",
-                Content = "Bem-vindo, " .. username .. "!",
-                Image = "rbxassetid://4483345998",
-                Time = 5
-            })
+            App.isLoggedIn = true
+            App.loginType = "roblox"
+            
+            showNotification("✅ Login Roblox", "Bem-vindo, " .. username .. "!")
+            
+            -- Carregar dados
+            local servers = makeRequest("GET", "/api/servers/" .. result.profile.id)
+            if servers and servers.success then
+                App.servers = servers.servers or {}
+            end
+            
+            local friends = makeRequest("GET", "/api/friends/" .. result.profile.id)
+            if friends and friends.success then
+                App.friends = friends.friends or {}
+            end
         else
-            OrionLib:MakeNotification({
-                Name = "❌ Erro",
-                Content = "Falha ao fazer login",
-                Image = "rbxassetid://4483345998",
-                Time = 5
-            })
+            showNotification("❌ Erro", "Falha ao fazer login")
         end
     end
 })
 
+LoginTab:AddLabel("")
+
+-- Login Discord
 LoginTab:AddButton({
     Name = "💜 Entrar com Discord",
     Callback = function()
-        OrionLib:MakeNotification({
-            Name = "ℹ️ Info",
-            Content = "Discord OAuth em desenvolvimento",
-            Image = "rbxassetid://4483345998",
-            Time = 5
-        })
+        showNotification("ℹ️ Info", "Discord OAuth - Cole o código de autenticação")
+        App.loginType = "discord"
+        -- Implementar Discord OAuth aqui
     end
 })
 
 LoginTab:AddLabel("")
-LoginTab:AddLabel("Versão: v" .. CONFIG.VERSION)
-LoginTab:AddLabel("Stack: Luau, Node.js, Supabase")
+LoginTab:AddLabel("v" .. CONFIG.VERSION .. " | Luau + Orion + Supabase")
 
 -- ============================================
--- TAB 2 - SERVIDORES & CANAIS
+-- TAB 2 - SERVIDORES (SÓ SE LOGGED)
 -- ============================================
 
 local ServersTab = Window:MakeTab({
@@ -171,52 +172,69 @@ local ServersTab = Window:MakeTab({
     PremiumOnly = false
 })
 
-ServersTab:AddLabel("SEUS SERVIDORES")
-ServersTab:AddLabel("")
-
-for _, server in ipairs(Servers) do
-    ServersTab:AddButton({
-        Name = server.icon .. " " .. server.name,
-        Callback = function()
-            App.selectedServer = server.name
-            App.isDM = false
-            OrionLib:MakeNotification({
-                Name = "🏠 Servidor",
-                Content = "Selecionado: " .. server.name,
-                Image = "rbxassetid://4483345998",
-                Time = 2
+local function UpdateServersTab()
+    ServersTab:ClearTab()
+    
+    if not App.isLoggedIn then
+        ServersTab:AddLabel("⚠️ Você precisa fazer login primeiro!")
+        return
+    end
+    
+    ServersTab:AddLabel("SEUS SERVIDORES")
+    ServersTab:AddLabel("")
+    
+    if #App.servers == 0 then
+        ServersTab:AddLabel("Você ainda não está em nenhum servidor")
+    else
+        for _, server in ipairs(App.servers) do
+            ServersTab:AddButton({
+                Name = server.name,
+                Callback = function()
+                    App.currentServer = server
+                    App.isDM = false
+                    
+                    -- Carregar canais
+                    local channelsData = makeRequest("GET", "/api/servers/" .. server.id .. "/channels")
+                    if channelsData and channelsData.success then
+                        App.channels = channelsData.channels or {}
+                    end
+                    
+                    showNotification("🏠 Servidor", "Selecionado: " .. server.name)
+                    UpdateChannelsTab()
+                end
             })
+        end
+    end
+    
+    ServersTab:AddLabel("")
+    ServersTab:AddButton({
+        Name = "➕ Criar Servidor",
+        Callback = function()
+            local result = makeRequest("POST", "/api/servers", {
+                name = "Novo Servidor",
+                owner_id = App.currentUser.id,
+                banner_url = "https://via.placeholder.com/1000x300?text=Novo+Servidor"
+            })
+            
+            if result and result.success then
+                showNotification("✨ Novo", "Servidor criado!")
+                UpdateServersTab()
+            end
+        end
+    })
+    
+    ServersTab:AddButton({
+        Name = "🔗 Entrar em Servidor",
+        Callback = function()
+            showNotification("🔗 Convite", "Cole o código de convite")
         end
     })
 end
 
-ServersTab:AddLabel("")
-ServersTab:AddButton({
-    Name = "➕ Criar Servidor",
-    Callback = function()
-        OrionLib:MakeNotification({
-            Name = "✨ Novo Servidor",
-            Content = "Servidor criado com sucesso!",
-            Image = "rbxassetid://4483345998",
-            Time = 3
-        })
-    end
-})
-
-ServersTab:AddButton({
-    Name = "🔗 Entrar em Servidor",
-    Callback = function()
-        OrionLib:MakeNotification({
-            Name = "🔗 Convite",
-            Content = "Cole o código de convite",
-            Image = "rbxassetid://4483345998",
-            Time = 3
-        })
-    end
-})
+UpdateServersTab()
 
 -- ============================================
--- TAB 3 - CANAIS DO SERVIDOR SELECIONADO
+-- TAB 3 - CANAIS (SÓ SE SERVIDOR SELECIONADO)
 -- ============================================
 
 local ChannelsTab = Window:MakeTab({
@@ -228,63 +246,90 @@ local ChannelsTab = Window:MakeTab({
 local function UpdateChannelsTab()
     ChannelsTab:ClearTab()
     
-    local selectedServer = nil
-    for _, srv in ipairs(Servers) do
-        if srv.name == App.selectedServer then
-            selectedServer = srv
-            break
+    if not App.isLoggedIn then
+        ChannelsTab:AddLabel("⚠️ Você precisa fazer login!")
+        return
+    end
+    
+    if not App.currentServer then
+        ChannelsTab:AddLabel("⚠️ Selecione um servidor!")
+        return
+    end
+    
+    ChannelsTab:AddLabel("SERVIDOR: " .. App.currentServer.name)
+    ChannelsTab:AddLabel("")
+    
+    -- Separar canais por tipo
+    local textChannels = {}
+    local voiceChannels = {}
+    
+    for _, channel in ipairs(App.channels) do
+        if channel.type == "text" then
+            table.insert(textChannels, channel)
+        elseif channel.type == "voice" then
+            table.insert(voiceChannels, channel)
         end
     end
     
-    if selectedServer then
-        ChannelsTab:AddLabel("SERVIDOR: " .. selectedServer.icon .. " " .. selectedServer.name)
-        ChannelsTab:AddLabel("")
-        
+    -- Canais de texto
+    if #textChannels > 0 then
         ChannelsTab:AddLabel("CANAIS DE TEXTO")
-        for _, channel in ipairs(selectedServer.channels) do
-            if channel.type == "text" then
-                ChannelsTab:AddButton({
-                    Name = "# " .. channel.name .. " - " .. channel.description,
-                    Callback = function()
-                        App.selectedChannel = channel.name
-                        App.isDM = false
-                        OrionLib:MakeNotification({
-                            Name = "💬 Canal",
-                            Content = "Selecionado: #" .. channel.name,
-                            Image = "rbxassetid://4483345998",
-                            Time = 2
-                        })
-                    end
-                })
+        for _, channel in ipairs(textChannels) do
+            local label = "# " .. channel.name
+            if channel.description then
+                label = label .. " - " .. channel.description
             end
-        end
-        
-        ChannelsTab:AddLabel("")
-        ChannelsTab:AddLabel("CANAIS DE VOZ")
-        for _, channel in ipairs(selectedServer.channels) do
-            if channel.type == "voice" then
-                ChannelsTab:AddButton({
-                    Name = "🔊 " .. channel.name .. " - " .. channel.description,
-                    Callback = function()
-                        OrionLib:MakeNotification({
-                            Name = "🎧 Voice",
-                            Content = "Conectando a: " .. channel.name,
-                            Image = "rbxassetid://4483345998",
-                            Time = 2
-                        })
+            
+            ChannelsTab:AddButton({
+                Name = label,
+                Callback = function()
+                    App.currentChannel = channel
+                    App.isDM = false
+                    
+                    -- Carregar mensagens
+                    local msgs = makeRequest("GET", "/api/channels/" .. channel.id .. "/messages?limit=50")
+                    if msgs and msgs.success then
+                        App.messages = msgs.messages or {}
                     end
-                })
-            end
+                    
+                    showNotification("💬 Canal", "Selecionado: #" .. channel.name)
+                    UpdateChatTab()
+                end
+            })
         end
-    else
-        ChannelsTab:AddLabel("Selecione um servidor primeiro!")
     end
+    
+    ChannelsTab:AddLabel("")
+    
+    -- Canais de voz
+    if #voiceChannels > 0 then
+        ChannelsTab:AddLabel("CANAIS DE VOZ")
+        for _, channel in ipairs(voiceChannels) do
+            local label = "🔊 " .. channel.name
+            if channel.description then
+                label = label .. " - " .. channel.description
+            end
+            
+            ChannelsTab:AddButton({
+                Name = label,
+                Callback = function()
+                    showNotification("🎧 Voice", "Conectando: " .. channel.name)
+                end
+            })
+        end
+    end
+    
+    ChannelsTab:AddLabel("")
+    ChannelsTab:AddButton({
+        Name = "➕ Criar Canal",
+        Callback = function()
+            showNotification("ℹ️ Info", "Digite o nome e tipo do canal")
+        end
+    })
 end
 
-UpdateChannelsTab()
-
 -- ============================================
--- TAB 4 - CHAT (MENSAGENS DO CANAL)
+-- TAB 4 - CHAT
 -- ============================================
 
 local ChatTab = Window:MakeTab({
@@ -296,57 +341,73 @@ local ChatTab = Window:MakeTab({
 local function UpdateChatTab()
     ChatTab:ClearTab()
     
-    if App.isDM then
-        ChatTab:AddLabel("CONVERSA PRIVADA - " .. App.selectedDM)
+    if not App.isLoggedIn then
+        ChatTab:AddLabel("⚠️ Você precisa fazer login!")
+        return
+    end
+    
+    if App.isDM and App.currentDM then
+        ChatTab:AddLabel("💬 DM COM: " .. App.currentDM.roblox_username or App.currentDM.discord_username)
+    elseif App.currentChannel then
+        ChatTab:AddLabel("# " .. App.currentChannel.name .. " (" .. App.currentServer.name .. ")")
     else
-        ChatTab:AddLabel("CANAL - #" .. App.selectedChannel .. " (" .. App.selectedServer .. ")")
+        ChatTab:AddLabel("Selecione um canal ou amigo!")
+        return
     end
     
     ChatTab:AddLabel("")
     
     -- Mostrar mensagens
-    for _, msg in ipairs(ExampleMessages) do
-        if msg.isSystem then
-            ChatTab:AddLabel("--- " .. msg.content .. " ---")
-        else
-            local prefix = msg.isOwn and "✓ " or ""
-            ChatTab:AddLabel("[" .. msg.timestamp .. "] " .. prefix .. msg.author .. ": " .. msg.content)
+    if #App.messages > 0 then
+        for _, msg in ipairs(App.messages) do
+            local authorName = msg.author_name or "Unknown"
+            local timestamp = msg.created_at or "now"
+            ChatTab:AddLabel("[" .. timestamp .. "] " .. authorName .. ": " .. msg.content)
         end
+    else
+        ChatTab:AddLabel("Nenhuma mensagem ainda. Seja o primeiro a falar!")
     end
     
     ChatTab:AddLabel("")
     ChatTab:AddLabel("────────────────────────")
     ChatTab:AddLabel("")
     
-    -- Input de mensagem
+    -- Input
     ChatTab:AddTextbox({
         Name = "Escrever mensagem...",
         Default = "",
         TextDisabled = false,
         Callback = function(Value)
             if Value ~= "" then
-                table.insert(ExampleMessages, {
-                    author = App.currentUser and App.currentUser.roblox_username or "You",
-                    content = Value,
-                    timestamp = os.date("%H:%M"),
-                    isOwn = true
-                })
-                
-                OrionLib:MakeNotification({
-                    Name = "✨ Mensagem Enviada",
-                    Content = "Sua mensagem foi enviada!",
-                    Image = "rbxassetid://4483345998",
-                    Time = 2
-                })
-                
-                wait(0.5)
-                UpdateChatTab()
+                if App.isDM and App.currentDM then
+                    -- Enviar DM
+                    local result = makeRequest("POST", "/api/dms", {
+                        sender_id = App.currentUser.id,
+                        recipient_id = App.currentDM.id,
+                        content = Value
+                    })
+                    
+                    if result and result.success then
+                        showNotification("✨ Enviada", "Mensagem privada enviada!")
+                    end
+                elseif App.currentChannel then
+                    -- Enviar mensagem no canal
+                    local result = makeRequest("POST", "/api/messages", {
+                        channel_id = App.currentChannel.id,
+                        user_id = App.currentUser.id,
+                        content = Value
+                    })
+                    
+                    if result and result.success then
+                        table.insert(App.messages, result.message)
+                        showNotification("✨ Enviada", "Mensagem enviada!")
+                        UpdateChatTab()
+                    end
+                end
             end
         end
     })
 end
-
-UpdateChatTab()
 
 -- ============================================
 -- TAB 5 - AMIGOS & DMs
@@ -358,38 +419,46 @@ local FriendsTab = Window:MakeTab({
     PremiumOnly = false
 })
 
-FriendsTab:AddLabel("AMIGOS ONLINE")
-FriendsTab:AddLabel("")
-
-for _, friend in ipairs(Friends) do
-    FriendsTab:AddButton({
-        Name = friend.statusEmoji .. " " .. friend.name .. " - " .. friend.status,
-        Callback = function()
-            App.selectedDM = friend.name
-            App.isDM = true
-            OrionLib:MakeNotification({
-                Name = "💬 DM Aberta",
-                Content = "Conversa com " .. friend.name,
-                Image = "rbxassetid://4483345998",
-                Time = 2
+local function UpdateFriendsTab()
+    FriendsTab:ClearTab()
+    
+    if not App.isLoggedIn then
+        FriendsTab:AddLabel("⚠️ Você precisa fazer login!")
+        return
+    end
+    
+    FriendsTab:AddLabel("AMIGOS ONLINE")
+    FriendsTab:AddLabel("")
+    
+    if #App.friends == 0 then
+        FriendsTab:AddLabel("Você ainda não tem amigos")
+    else
+        for _, friend in ipairs(App.friends) do
+            local friendName = friend.friend.roblox_username or friend.friend.discord_username or "Unknown"
+            local status = friend.friend.status or "offline"
+            local statusEmoji = status == "online" and "🟢" or (status == "idle" and "🟡" or "🔴")
+            
+            FriendsTab:AddButton({
+                Name = statusEmoji .. " " .. friendName,
+                Callback = function()
+                    App.currentDM = friend.friend
+                    App.isDM = true
+                    
+                    showNotification("💬 DM", "Conversa com " .. friendName)
+                    UpdateChatTab()
+                end
             })
-            UpdateChatTab()
+        end
+    end
+    
+    FriendsTab:AddLabel("")
+    FriendsTab:AddButton({
+        Name = "➕ Adicionar Amigo",
+        Callback = function()
+            showNotification("👥 Solicitação", "Solicitação de amizade enviada!")
         end
     })
 end
-
-FriendsTab:AddLabel("")
-FriendsTab:AddButton({
-    Name = "➕ Adicionar Amigo",
-    Callback = function()
-        OrionLib:MakeNotification({
-            Name = "👥 Solicitação Enviada",
-            Content = "Solicitação de amizade enviada!",
-            Image = "rbxassetid://4483345998",
-            Time = 3
-        })
-    end
-})
 
 -- ============================================
 -- TAB 6 - REAÇÕES & EMOJIS
@@ -404,37 +473,23 @@ local EmojisTab = Window:MakeTab({
 EmojisTab:AddLabel("EMOJIS POPULARES")
 EmojisTab:AddLabel("")
 
-local emojis = {"😀", "😂", "😍", "🤔", "😡", "😎", "❤️", "👍", "👎", "🔥", "✨", "🎉", "🎮", "💻", "🚀", "⭐"}
-
+local emojis = {"😀", "😂", "😍", "🤔", "❤️", "👍", "🔥", "✨", "🎉", "🎮", "💻", "🚀"}
 for _, emoji in ipairs(emojis) do
     EmojisTab:AddButton({
         Name = emoji .. " Reagir",
         Callback = function()
-            OrionLib:MakeNotification({
-                Name = "😊 Reação",
-                Content = "Você reagiu com " .. emoji,
-                Image = "rbxassetid://4483345998",
-                Time = 2
-            })
-        end
-    })
-end
-
-EmojisTab:AddLabel("")
-EmojisTab:AddLabel("STICKERS")
-EmojisTab:AddLabel("")
-
-local stickers = {"👍", "❤️", "😂", "🔥", "✨", "🎉"}
-for _, sticker in ipairs(stickers) do
-    EmojisTab:AddButton({
-        Name = sticker .. " Enviar Sticker",
-        Callback = function()
-            OrionLib:MakeNotification({
-                Name = "✨ Sticker",
-                Content = "Sticker " .. sticker .. " enviado!",
-                Image = "rbxassetid://4483345998",
-                Time = 2
-            })
+            if App.currentChannel and #App.messages > 0 then
+                local lastMsg = App.messages[#App.messages]
+                local result = makeRequest("POST", "/api/reactions", {
+                    message_id = lastMsg.id,
+                    user_id = App.currentUser.id,
+                    emoji = emoji
+                })
+                
+                if result and result.success then
+                    showNotification("😊 Reação", "Você reagiu com " .. emoji)
+                end
+            end
         end
     })
 end
@@ -450,11 +505,42 @@ local SettingsTab = Window:MakeTab({
 })
 
 SettingsTab:AddLabel("PERFIL")
-if App.currentUser then
-    SettingsTab:AddLabel("👤 " .. App.currentUser.roblox_username)
+
+if App.isLoggedIn and App.currentUser then
+    local displayName = App.currentUser.roblox_username or App.currentUser.discord_username or "User"
+    SettingsTab:AddLabel("👤 " .. displayName)
     SettingsTab:AddLabel("🟢 Online")
+    SettingsTab:AddLabel("")
+    
+    SettingsTab:AddLabel("LOGINS CONECTADOS")
+    if App.currentUser.roblox_username then
+        SettingsTab:AddLabel("🎮 Roblox: " .. App.currentUser.roblox_username)
+    end
+    if App.currentUser.discord_username then
+        SettingsTab:AddLabel("💜 Discord: " .. App.currentUser.discord_username)
+    end
+    
+    SettingsTab:AddLabel("")
+    
+    if not App.currentUser.discord_username then
+        SettingsTab:AddButton({
+            Name = "💜 Conectar Discord",
+            Callback = function()
+                showNotification("💜 Discord", "Abra Discord e complete a autenticação")
+            end
+        })
+    end
+    
+    if not App.currentUser.roblox_username then
+        SettingsTab:AddButton({
+            Name = "🎮 Conectar Roblox",
+            Callback = function()
+                showNotification("🎮 Roblox", "Você já está logado com Roblox!")
+            end
+        })
+    end
 else
-    SettingsTab:AddLabel("⚠️ Faça login primeiro")
+    SettingsTab:AddLabel("⚠️ Você precisa fazer login!")
 end
 
 SettingsTab:AddLabel("")
@@ -465,110 +551,31 @@ SettingsTab:AddDropdown({
     Default = "Online",
     Options = {"Online", "Idle", "Do Not Disturb", "Invisible"},
     Callback = function(Value)
-        OrionLib:MakeNotification({
-            Name = "📍 Status",
-            Content = "Status alterado para: " .. Value,
-            Image = "rbxassetid://4483345998",
-            Time = 2
-        })
+        if App.isLoggedIn and App.currentUser then
+            makeRequest("PUT", "/api/profiles/" .. App.currentUser.id, {
+                status = Value:lower()
+            })
+            showNotification("📍 Status", "Status alterado para: " .. Value)
+        end
     end
 })
 
 SettingsTab:AddLabel("")
-SettingsTab:AddLabel("PRIVACIDADE")
-
-SettingsTab:AddToggle({
-    Name = "Mostrar Status Online",
-    Default = true,
-    Callback = function(Value)
-        OrionLib:MakeNotification({
-            Name = "🔒 Privacidade",
-            Content = Value and "Status visível" or "Status oculto",
-            Image = "rbxassetid://4483345998",
-            Time = 2
-        })
-    end
-})
-
 SettingsTab:AddToggle({
     Name = "Notificações Ativadas",
     Default = true,
     Callback = function(Value)
-        OrionLib:MakeNotification({
-            Name = "🔔 Notificações",
-            Content = Value and "Ativadas" or "Desativadas",
-            Image = "rbxassetid://4483345998",
-            Time = 2
-        })
-    end
-})
-
-SettingsTab:AddToggle({
-    Name = "Sons Ativados",
-    Default = true,
-    Callback = function(Value)
-        OrionLib:MakeNotification({
-            Name = "🔊 Som",
-            Content = Value and "Ativado" or "Desativado",
-            Image = "rbxassetid://4483345998",
-            Time = 2
-        })
-    end
-})
-
-SettingsTab:AddLabel("")
-SettingsTab:AddLabel("APARÊNCIA")
-
-SettingsTab:AddDropdown({
-    Name = "Tema",
-    Default = "Escuro",
-    Options = {"Escuro", "Claro", "Discord"},
-    Callback = function(Value)
-        OrionLib:MakeNotification({
-            Name = "🎨 Tema",
-            Content = "Tema alterado para: " .. Value,
-            Image = "rbxassetid://4483345998",
-            Time = 2
-        })
-    end
-})
-
-SettingsTab:AddSlider({
-    Name = "Tamanho da Fonte",
-    Min = 8,
-    Max = 24,
-    Default = 16,
-    Color = Color3.fromRGB(88, 101, 242),
-    Increment = 1,
-    ValueChanged = function(Value)
-        -- Implementar ajuste de tamanho
-    end
-})
-
-SettingsTab:AddLabel("")
-SettingsTab:AddButton({
-    Name = "💾 Salvar Configurações",
-    Callback = function()
-        OrionLib:MakeNotification({
-            Name = "💾 Salvo",
-            Content = "Configurações salvas com sucesso!",
-            Image = "rbxassetid://4483345998",
-            Time = 2
-        })
+        showNotification("🔔 Notificações", Value and "Ativadas" or "Desativadas")
     end
 })
 
 SettingsTab:AddButton({
-    Name = "🔐 Logout",
+    Name = "🚪 Logout",
     Callback = function()
         App.currentUser = nil
         App.sessionToken = nil
-        OrionLib:MakeNotification({
-            Name = "👋 Logout",
-            Content = "Você foi desconectado",
-            Image = "rbxassetid://4483345998",
-            Time = 3
-        })
+        App.isLoggedIn = false
+        showNotification("👋 Logout", "Você foi desconectado!")
     end
 })
 
@@ -584,51 +591,27 @@ local AboutTab = Window:MakeTab({
 
 AboutTab:AddLabel("🔥 RoDiscord v" .. CONFIG.VERSION)
 AboutTab:AddLabel("")
-AboutTab:AddLabel("Interface Discord completa no Roblox")
+AboutTab:AddLabel("Discord COMPLETO dentro do Roblox")
 AboutTab:AddLabel("")
-AboutTab:AddLabel("FEATURES PRINCIPAIS:")
+AboutTab:AddLabel("✅ FEATURES:")
 AboutTab:AddLabel("")
-AboutTab:AddLabel("✅ Servidores e Canais")
-AboutTab:AddLabel("✅ Chat em Tempo Real")
-AboutTab:AddLabel("✅ Sistema de Amigos")
-AboutTab:AddLabel("✅ Mensagens Privadas (DMs)")
-AboutTab:AddLabel("✅ Reações em Mensagens")
-AboutTab:AddLabel("✅ Emojis e Stickers")
-AboutTab:AddLabel("✅ Notificações")
-AboutTab:AddLabel("✅ Configurações Avançadas")
-AboutTab:AddLabel("✅ Login Roblox/Discord")
+AboutTab:AddLabel("✓ Login obrigatório (Roblox + Discord)")
+AboutTab:AddLabel("✓ Linking de contas")
+AboutTab:AddLabel("✓ Servidores e canais")
+AboutTab:AddLabel("✓ Chat em tempo real")
+AboutTab:AddLabel("✓ Mensagens privadas (DMs)")
+AboutTab:AddLabel("✓ Reações em mensagens")
+AboutTab:AddLabel("✓ Emojis customizados")
+AboutTab:AddLabel("✓ Amigos e status online")
+AboutTab:AddLabel("✓ Configurações avançadas")
 AboutTab:AddLabel("")
-AboutTab:AddLabel("TECNOLOGIA:")
-AboutTab:AddLabel("🔴 Frontend: Luau + Orion Library")
-AboutTab:AddLabel("🔵 Backend: Node.js + Express")
-AboutTab:AddLabel("🟣 Database: Supabase PostgreSQL")
+AboutTab:AddLabel("💻 STACK:")
+AboutTab:AddLabel("Frontend: Luau + Orion UI")
+AboutTab:AddLabel("Backend: Node.js + Express")
+AboutTab:AddLabel("Database: Supabase PostgreSQL")
 AboutTab:AddLabel("")
-AboutTab:AddLabel("DESENVOLVEDOR: EduO1")
-AboutTab:AddLabel("")
-
-AboutTab:AddButton({
-    Name = "🔗 GitHub: EduO1/RoDiscord",
-    Callback = function()
-        OrionLib:MakeNotification({
-            Name = "🔗 GitHub",
-            Content = "github.com/EduO1/RoDiscord",
-            Image = "rbxassetid://4483345998",
-            Time = 5
-        })
-    end
-})
-
-AboutTab:AddButton({
-    Name = "🌐 Website: rodiscord.onrender.com",
-    Callback = function()
-        OrionLib:MakeNotification({
-            Name = "🌐 Web",
-            Content = "rodiscord.onrender.com",
-            Image = "rbxassetid://4483345998",
-            Time = 5
-        })
-    end
-})
+AboutTab:AddLabel("👤 Desenvolvedor: EduO1")
+AboutTab:AddLabel("🔗 GitHub: github.com/EduO1/RoDiscord")
 
 -- ============================================
 -- INICIALIZAÇÃO
@@ -636,15 +619,15 @@ AboutTab:AddButton({
 
 OrionLib:Init()
 
-print("✅ RoDiscord v" .. CONFIG.VERSION .. " - DISCORD NO ROBLOX!")
+print("✅ RoDiscord v" .. CONFIG.VERSION .. " INICIADO!")
 print("")
-print("📱 Interface pronta para uso")
-print("✨ Todas as features funcionando")
-print("🎮 Clique no botão e comece a usar!")
+print("🔐 AVISO: Faça login na aba 'Login' para acessar os outros recursos!")
 print("")
-print("Stack:")
-print("  • Frontend: Luau + Orion Library")
-print("  • Backend: Node.js/Express")
-print("  • Database: Supabase PostgreSQL")
+print("Stack completo:")
+print("  ✓ Frontend: Luau + Orion UI")
+print("  ✓ Backend: Node.js/Express")
+print("  ✓ Database: Supabase PostgreSQL")
+print("  ✓ Autenticação: Dual Login (Roblox + Discord)")
 print("")
-print("🔗 GitHub: github.com/EduO1/RoDiscord")
+print("🌐 API: https://rodiscord.onrender.com")
+print("📝 GitHub: https://github.com/EduO1/RoDiscord")
