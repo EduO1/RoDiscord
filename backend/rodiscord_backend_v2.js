@@ -3,6 +3,7 @@
 // ============================================
 // Todos os endpoints funcionando
 // Login dual, servidores, canais, mensagens, DMs
+// Novo: Endpoint GET para executor compatibility
 // ============================================
 
 const express = require('express');
@@ -51,6 +52,75 @@ app.post('/api/auth/roblox-login', async (req, res) => {
                     roblox_id,
                     roblox_username,
                     avatar_url,
+                    status: 'online',
+                    created_at: new Date()
+                }])
+                .select()
+                .single();
+
+            if (createError) {
+                return res.status(500).json({ error: createError.message });
+            }
+
+            profile = newProfile;
+        } else {
+            // Atualizar status
+            await supabase
+                .from('profiles')
+                .update({ status: 'online', last_seen: new Date() })
+                .eq('id', profile.id);
+        }
+
+        const sessionToken = Math.random().toString(36).substring(2);
+
+        res.json({
+            success: true,
+            session_token: sessionToken,
+            profile: {
+                id: profile.id,
+                roblox_id: profile.roblox_id,
+                roblox_username: profile.roblox_username,
+                discord_id: profile.discord_id,
+                discord_username: profile.discord_username,
+                avatar_url: profile.avatar_url,
+                status: 'online'
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Login Roblox (GET version - para executor compatibility)
+app.get('/api/auth/roblox-login-get', async (req, res) => {
+    try {
+        const { roblox_id, roblox_username, avatar_url } = req.query;
+
+        if (!roblox_id || !roblox_username) {
+            return res.status(400).json({ 
+                error: "roblox_id e roblox_username são obrigatórios" 
+            });
+        }
+
+        // Verificar se user existe
+        let { data: profile, error: fetchError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('roblox_id', parseInt(roblox_id))
+            .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+            return res.status(500).json({ error: fetchError.message });
+        }
+
+        // Se não existe, criar
+        if (!profile) {
+            const { data: newProfile, error: createError } = await supabase
+                .from('profiles')
+                .insert([{
+                    roblox_id: parseInt(roblox_id),
+                    roblox_username,
+                    avatar_url: avatar_url || "https://www.roblox.com/bust-thumbnails/123/400x400.png",
                     status: 'online',
                     created_at: new Date()
                 }])
@@ -632,4 +702,5 @@ app.listen(PORT, () => {
     console.log(`✅ RoDiscord Backend v2 rodando em porta ${PORT}`);
     console.log(`📝 Stack: Node.js + Express + Supabase`);
     console.log(`🌐 URL: https://rodiscord.onrender.com`);
+    console.log(`🔧 GET endpoint: /api/auth/roblox-login-get`);
 });
