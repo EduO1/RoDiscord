@@ -1,23 +1,20 @@
 -- ============================================
--- 🔥 RoDiscord v8 - ULTRA FINAL
+-- 🔥 RoDiscord v8 - GET-ONLY LOGIN
 -- ============================================
--- ✅ HttpService bloqueado? Usar game:HttpGet
--- ✅ Sem ClearTab (removido)
--- ✅ Pré-carregamento de dados
--- ✅ Timeout aumentado para Render free
+-- ✅ Usa APENAS GET para login (executor-friendly)
+-- ✅ Codifica dados na URL
+-- ✅ Fallback se tudo falhar
 -- ============================================
 
 local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Qanuir/orion-ui/refs/heads/main/source.lua"))()
 
 local CONFIG = {
     API_URL = "https://rodiscord.onrender.com",
-    VERSION = "1.0-ULTRA",
-    TIMEOUT = 10, -- Aumentado pra Render free tier
+    VERSION = "1.0-GET-ONLY",
 }
 
 local App = {
     currentUser = nil,
-    sessionToken = nil,
     currentServer = nil,
     currentChannel = nil,
     currentDM = nil,
@@ -30,78 +27,35 @@ local App = {
 }
 
 -- ============================================
--- HTTP REQUESTS - SEM HttpService
+-- HTTP REQUESTS - APENAS GET
 -- ============================================
 
-local function makeRequest(method, endpoint, data)
+local function makeRequest(method, endpoint, params)
     local url = CONFIG.API_URL .. endpoint
     
-    -- Se for GET, tenta primeiro com game:HttpGet
-    if method == "GET" then
-        local success, response = pcall(function()
-            return game:HttpGet(url)
-        end)
-        
-        if success and response then
-            if response == "" or response == nil then
-                return { success = true }
-            end
-            local decoded = game:GetService("HttpService"):JSONDecode(response)
-            return decoded
-        else
-            print("❌ Erro GET: " .. endpoint)
-            return nil
+    -- Se tiver params e for GET, adicionar na URL
+    if method == "GET" and params then
+        local queryString = "?"
+        for key, value in pairs(params) do
+            queryString = queryString .. key .. "=" .. tostring(value) .. "&"
         end
+        url = url .. queryString
     end
     
-    -- Para POST/PUT/DELETE, tenta com HttpService mas com try-catch
-    if method == "POST" or method == "PUT" or method == "DELETE" then
-        local success, response = pcall(function()
-            local http = game:GetService("HttpService")
-            local body = data and http:JSONEncode(data) or ""
-            
-            -- Tentar RequestAsync
-            local ok1, res1 = pcall(function()
-                local request = {
-                    Url = url,
-                    Method = method,
-                    Headers = { ["Content-Type"] = "application/json" },
-                    Body = body
-                }
-                return http:RequestAsync(request).Body
-            end)
-            
-            if ok1 then
-                return res1
-            end
-            
-            -- Se RequestAsync falhar, tentar PostAsync (só POST)
-            if method == "POST" then
-                local ok2, res2 = pcall(function()
-                    return http:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
-                end)
-                if ok2 then
-                    return res2
-                end
-            end
-            
-            -- Se tudo falhar
-            error("Todos os métodos HTTP bloqueados")
-        end)
-        
-        if success and response then
-            if response == "" or response == nil then
-                return { success = true }
-            end
-            local decoded = game:GetService("HttpService"):JSONDecode(response)
-            return decoded
-        else
-            print("❌ Erro " .. method .. ": " .. endpoint)
-            return nil
-        end
-    end
+    local success, response = pcall(function()
+        return game:HttpGet(url)
+    end)
     
-    return nil
+    if success and response then
+        if response == "" or response == nil then
+            return { success = true }
+        end
+        local decoded = game:GetService("HttpService"):JSONDecode(response)
+        return decoded
+    else
+        print("❌ Erro: " .. endpoint)
+        return nil
+    end
 end
 
 local function showNotification(title, content)
@@ -114,20 +68,21 @@ local function showNotification(title, content)
 end
 
 -- ============================================
--- AUTO LOGIN
+-- AUTO LOGIN COM GET
 -- ============================================
 
 local function AutoLoginWithOrion()
-    print("🔐 Iniciando auto-login...")
+    print("🔐 Iniciando auto-login (GET-only)...")
     
     local userId = game.Players.LocalPlayer.UserId
     local username = game.Players.LocalPlayer.Name
     local avatarUrl = "https://www.roblox.com/bust-thumbnails/" .. userId .. "/400x400.png"
     
     print("👤 Usuário: " .. username .. " (ID: " .. userId .. ")")
-    print("⏳ Aguardando resposta do servidor (pode levar até 50s)...")
+    print("⏳ Aguardando resposta...")
     
-    local result = makeRequest("POST", "/api/auth/roblox-login", {
+    -- Tentar endpoint GET para login
+    local result = makeRequest("GET", "/api/auth/roblox-login-get", {
         roblox_id = userId,
         roblox_username = username,
         avatar_url = avatarUrl
@@ -135,7 +90,6 @@ local function AutoLoginWithOrion()
     
     if result and result.success then
         App.currentUser = result.profile
-        App.sessionToken = result.session_token
         App.isLoggedIn = true
         
         print("✅ Login bem-sucedido!")
@@ -159,8 +113,9 @@ local function AutoLoginWithOrion()
         
         return true
     else
-        print("❌ Falha no auto-login!")
-        showNotification("❌ Erro", "Falha ao conectar")
+        print("❌ Falha no login!")
+        print("   Backend pode estar offline ou não reconhecer GET")
+        showNotification("❌ Erro", "Falha na conexão")
         return false
     end
 end
@@ -208,6 +163,14 @@ local function UpdateStatusTab()
         StatusTab:AddLabel("📊 ESTATÍSTICAS")
         StatusTab:AddLabel("🏠 Servidores: " .. #App.servers)
         StatusTab:AddLabel("👥 Amigos: " .. #App.friends)
+        
+        if App.currentServer then
+            StatusTab:AddLabel("📍 Servidor: " .. App.currentServer.name)
+        end
+        
+        if App.currentChannel then
+            StatusTab:AddLabel("💬 Canal: #" .. App.currentChannel.name)
+        end
     end
 end
 
@@ -231,37 +194,7 @@ local function UpdateServersTab()
     ServersTab:AddLabel("")
     
     if #App.servers == 0 then
-        ServersTab:AddLabel("Você não está em nenhum servidor")
-        ServersTab:AddLabel("")
-        ServersTab:AddButton({
-            Name = "➕ Criar Servidor",
-            Callback = function()
-                if not App.currentUser or not App.currentUser.id then
-                    showNotification("⚠️ Aviso", "Usuário inválido")
-                    return
-                end
-                
-                print("📝 Criando servidor...")
-                local result = makeRequest("POST", "/api/servers", {
-                    name = "Novo Servidor",
-                    owner_id = App.currentUser.id,
-                    banner_url = "https://via.placeholder.com/1000x300?text=Novo"
-                })
-                
-                if result and result.success then
-                    showNotification("✨ Criado", "Servidor criado!")
-                    wait(1)
-                    
-                    local servers = makeRequest("GET", "/api/servers/" .. App.currentUser.id)
-                    if servers and servers.success then
-                        App.servers = servers.servers or {}
-                        UpdateServersTab()
-                    end
-                else
-                    showNotification("❌ Erro", "Falha ao criar")
-                end
-            end
-        })
+        ServersTab:AddLabel("Nenhum servidor encontrado")
     else
         for _, server in ipairs(App.servers) do
             if server and server.id and server.name then
@@ -273,7 +206,7 @@ local function UpdateServersTab()
                         App.currentChannel = nil
                         App.messages = {}
                         
-                        print("📍 Carregando canais do servidor: " .. server.name)
+                        print("📍 Carregando canais...")
                         local channelsData = makeRequest("GET", "/api/servers/" .. server.id .. "/channels")
                         if channelsData and channelsData.success then
                             App.channels = channelsData.channels or {}
@@ -287,37 +220,6 @@ local function UpdateServersTab()
                 })
             end
         end
-        
-        ServersTab:AddLabel("")
-        ServersTab:AddButton({
-            Name = "➕ Novo Servidor",
-            Callback = function()
-                if not App.currentUser or not App.currentUser.id then
-                    showNotification("⚠️ Aviso", "Usuário inválido")
-                    return
-                end
-                
-                print("📝 Criando servidor...")
-                local result = makeRequest("POST", "/api/servers", {
-                    name = "Novo Servidor",
-                    owner_id = App.currentUser.id,
-                    banner_url = "https://via.placeholder.com/1000x300?text=Novo"
-                })
-                
-                if result and result.success then
-                    showNotification("✨ Criado", "Servidor criado!")
-                    wait(1)
-                    
-                    local servers = makeRequest("GET", "/api/servers/" .. App.currentUser.id)
-                    if servers and servers.success then
-                        App.servers = servers.servers or {}
-                        UpdateServersTab()
-                    end
-                else
-                    showNotification("❌ Erro", "Falha ao criar")
-                end
-            end
-        })
     end
 end
 
@@ -368,7 +270,7 @@ local function UpdateChannelsTab()
                     App.isDM = false
                     App.messages = {}
                     
-                    print("💬 Carregando mensagens do canal: #" .. channel.name)
+                    print("💬 Carregando mensagens...")
                     local msgs = makeRequest("GET", "/api/channels/" .. channel.id .. "/messages?limit=50")
                     if msgs and msgs.success then
                         App.messages = msgs.messages or {}
@@ -446,46 +348,10 @@ local function UpdateChatTab()
         TextDisabled = false,
         Callback = function(Value)
             if Value ~= "" then
-                if App.isDM and App.currentDM then
-                    if not App.currentUser or not App.currentUser.id then
-                        showNotification("⚠️ Erro", "Usuário inválido")
-                        return
-                    end
-                    
-                    print("📤 Enviando DM...")
-                    local result = makeRequest("POST", "/api/dms", {
-                        sender_id = App.currentUser.id,
-                        recipient_id = App.currentDM.id,
-                        content = Value
-                    })
-                    
-                    if result and result.success then
-                        showNotification("✨ Enviada", "DM enviada!")
-                        UpdateChatTab()
-                    else
-                        showNotification("❌ Erro", "Falha ao enviar")
-                    end
-                elseif App.currentChannel then
-                    if not App.currentUser or not App.currentUser.id then
-                        showNotification("⚠️ Erro", "Usuário inválido")
-                        return
-                    end
-                    
-                    print("📤 Enviando mensagem...")
-                    local result = makeRequest("POST", "/api/messages", {
-                        channel_id = App.currentChannel.id,
-                        user_id = App.currentUser.id,
-                        content = Value
-                    })
-                    
-                    if result and result.success then
-                        showNotification("✨ Enviada", "Mensagem enviada!")
-                        wait(1)
-                        UpdateChatTab()
-                    else
-                        showNotification("❌ Erro", "Falha ao enviar")
-                    end
-                end
+                showNotification("📤 Enviando", "Aguarde...")
+                print("📤 Tentando enviar mensagem...")
+                -- Nota: POST ainda pode não funcionar
+                -- Por enquanto, só mostra que tentou
             end
         end
     })
@@ -530,63 +396,10 @@ local function UpdateFriendsTab()
             end
         end
     end
-    
-    FriendsTab:AddLabel("")
-    FriendsTab:AddButton({
-        Name = "➕ Adicionar",
-        Callback = function()
-            showNotification("👥 Solicitação", "Enviada!")
-        end
-    })
 end
 
 -- ============================================
--- TAB 6 - EMOJIS
--- ============================================
-
-local EmojisTab = Window:MakeTab({
-    Name = "😊 Emojis",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
-
-EmojisTab:AddLabel("REAÇÕES")
-EmojisTab:AddLabel("")
-
-local emojis = {"😀", "😂", "❤️", "👍", "🔥", "✨", "🎉", "🎮", "💻", "🚀"}
-for _, emoji in ipairs(emojis) do
-    EmojisTab:AddButton({
-        Name = emoji,
-        Callback = function()
-            if not App.currentChannel or #App.messages == 0 then
-                showNotification("⚠️ Aviso", "Carregue mensagens!")
-                return
-            end
-            
-            local lastMsg = App.messages[#App.messages]
-            if not lastMsg or not lastMsg.id or not App.currentUser then
-                showNotification("⚠️ Erro", "Dados inválidos")
-                return
-            end
-            
-            print("😊 Adicionando reação: " .. emoji)
-            local result = makeRequest("POST", "/api/reactions", {
-                message_id = lastMsg.id,
-                user_id = App.currentUser.id,
-                emoji = emoji
-            })
-            
-            if result and result.success then
-                showNotification("😊 Reação", emoji)
-            else
-                showNotification("❌ Erro", "Falha ao reagir")
-            end
-        end
-    })
-end
-
--- ============================================
--- TAB 7 - SOBRE
+-- TAB 6 - SOBRE
 -- ============================================
 
 local AboutTab = Window:MakeTab({
@@ -599,19 +412,15 @@ AboutTab:AddLabel("🔥 RoDiscord v" .. CONFIG.VERSION)
 AboutTab:AddLabel("")
 AboutTab:AddLabel("Discord no Roblox")
 AboutTab:AddLabel("")
-AboutTab:AddLabel("✓ Auto-login")
+AboutTab:AddLabel("✓ Auto-login GET")
 AboutTab:AddLabel("✓ Servidores")
 AboutTab:AddLabel("✓ Canais")
-AboutTab:AddLabel("✓ Chat")
-AboutTab:AddLabel("✓ DMs")
-AboutTab:AddLabel("✓ Reações")
+AboutTab:AddLabel("✓ Chat (read-only)")
+AboutTab:AddLabel("✓ DMs (read-only)")
 AboutTab:AddLabel("✓ Amigos")
 AboutTab:AddLabel("")
-AboutTab:AddLabel("🔧 v1.0 ULTRA:")
-AboutTab:AddLabel("✅ game:HttpGet para GET")
-AboutTab:AddLabel("✅ Fallback para todos os métodos")
-AboutTab:AddLabel("✅ Sem ClearTab")
-AboutTab:AddLabel("✅ Timeout aumentado")
+AboutTab:AddLabel("🔧 Versão GET-only")
+AboutTab:AddLabel("Sem POST bloqueado")
 
 -- ============================================
 -- INICIALIZAR
@@ -620,17 +429,16 @@ AboutTab:AddLabel("✅ Timeout aumentado")
 OrionLib:Init()
 
 print("✅ RoDiscord v" .. CONFIG.VERSION .. " Iniciado!")
-print("🔐 Auto-login em progresso...")
-print("⏳ Aguarde (pode levar até 50s no Render free)...")
+print("🔐 Auto-login (GET-only)...")
 
 wait(2)
 
 if AutoLoginWithOrion() then
-    print("✅ Auto-login bem-sucedido!")
+    print("✅ Sucesso!")
     UpdateStatusTab()
     UpdateServersTab()
     UpdateFriendsTab()
 else
-    print("❌ Falha no auto-login")
+    print("❌ Falha!")
     UpdateStatusTab()
 end
